@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anantadwi13/gorong2/internal/common"
+	"github.com/anantadwi13/gorong2/internal/legacy/common"
 	"github.com/gorilla/websocket"
 )
 

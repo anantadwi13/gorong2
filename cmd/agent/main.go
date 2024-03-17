@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/anantadwi13/gorong2/internal/agent"
-	"github.com/anantadwi13/gorong2/internal/common"
+	"github.com/anantadwi13/gorong2/internal/legacy/agent"
+	"github.com/anantadwi13/gorong2/internal/legacy/common"
 	"github.com/spf13/pflag"
 )
 

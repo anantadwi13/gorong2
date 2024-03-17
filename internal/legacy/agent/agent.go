@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anantadwi13/gorong2/internal/backbone"
-	"github.com/anantadwi13/gorong2/internal/common"
-	"github.com/anantadwi13/gorong2/internal/edge"
+	"github.com/anantadwi13/gorong2/internal/legacy/backbone"
+	"github.com/anantadwi13/gorong2/internal/legacy/common"
+	"github.com/anantadwi13/gorong2/internal/legacy/edge"
 )
 
 type Config struct {

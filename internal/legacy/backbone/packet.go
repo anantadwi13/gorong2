@@ -1,6 +1,8 @@
 package backbone
 
-import "github.com/anantadwi13/gorong2/internal/common"
+import (
+	"github.com/anantadwi13/gorong2/internal/legacy/common"
+)
 
 type packet struct {
 	id         common.Id

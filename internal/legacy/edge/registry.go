@@ -5,7 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/anantadwi13/gorong2/internal/common"
+	"github.com/anantadwi13/gorong2/internal/legacy/common"
 )
 
 type registry struct {

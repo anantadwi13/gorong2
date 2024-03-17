@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/anantadwi13/gorong2/internal/common"
+	"github.com/anantadwi13/gorong2/internal/legacy/common"
 )
 
 type Protocol int

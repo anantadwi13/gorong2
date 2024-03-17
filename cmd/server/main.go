@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/anantadwi13/gorong2/internal/server"
+	"github.com/anantadwi13/gorong2/internal/legacy/server"
 	"github.com/spf13/pflag"
 )
 
