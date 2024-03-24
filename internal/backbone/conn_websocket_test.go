@@ -44,7 +44,7 @@ func TestController(t *testing.T) {
 		for {
 			conn, err := listen.AcceptController()
 			if err != nil {
-				if !errors.Is(err, backbone.ErrConnClosed) {
+				if !errors.Is(err, backbone.ErrClosed) {
 					t.Error(err)
 				}
 				return
@@ -55,7 +55,7 @@ func TestController(t *testing.T) {
 				defer t.Log("conn closed", conn.RemoteAddr())
 
 				for x := times; x >= 0; x-- {
-					msg, err := conn.ReadMessage()
+					msg, err := messageFactory.ReadMessage(conn)
 					assert.NoError(t, err)
 
 					message, ok := msg.(*backbone.PingMessage)
@@ -64,7 +64,7 @@ func TestController(t *testing.T) {
 						pingCount.Add(1)
 					}
 
-					err = conn.WriteMessage(&backbone.PongMessage{
+					err = messageFactory.WriteMessage(conn, &backbone.PongMessage{
 						Error: nil,
 						Time:  time.Now(),
 					})
@@ -85,10 +85,10 @@ func TestController(t *testing.T) {
 		defer conn.Close()
 
 		for x := times; x >= 0; x-- {
-			err := conn.WriteMessage(&backbone.PingMessage{Time: time.Now()})
+			err := messageFactory.WriteMessage(conn, &backbone.PingMessage{Time: time.Now()})
 			assert.NoError(t, err)
 
-			msg, err := conn.ReadMessage()
+			msg, err := messageFactory.ReadMessage(conn)
 			assert.NoError(t, err)
 
 			message, ok := msg.(*backbone.PongMessage)
@@ -130,7 +130,7 @@ func TestWorker(t *testing.T) {
 		for {
 			conn, err := listen.AcceptWorker()
 			if err != nil {
-				if !errors.Is(err, backbone.ErrConnClosed) {
+				if !errors.Is(err, backbone.ErrClosed) {
 					t.Error(err)
 				}
 				return
@@ -184,7 +184,7 @@ func TestWorker(t *testing.T) {
 					n, err := io.CopyBuffer(io.Discard, conn, buf.Buf[:bufSize])
 					readSize.Add(int32(n))
 					if err != nil {
-						if errors.Is(err, backbone.ErrConnClosed) {
+						if errors.Is(err, backbone.ErrClosed) {
 							return
 						}
 						t.Error("error read msg", n, err)
@@ -198,7 +198,7 @@ func TestWorker(t *testing.T) {
 					//n2, err := conn.Read(buf.Buf)
 					//total += int64(n2)
 					//if err != nil {
-					//	if errors.Is(err, backbone.ErrConnClosed) {
+					//	if errors.Is(err, backbone.ErrClosed) {
 					//		log.Error(ctx, "closed", string(buf.Buf[:n2]), n2, err)
 					//		return
 					//	}

@@ -9,29 +9,34 @@ import (
 	"time"
 
 	"github.com/anantadwi13/gorong2/component/backbone"
+	backboneImpl "github.com/anantadwi13/gorong2/internal/backbone"
 	"github.com/anantadwi13/gorong2/pkg/log"
 )
 
 type Server struct {
+	cfg Config
+
 	wg        sync.WaitGroup
 	shutdown  chan struct{}
 	isRunning atomic.Uint32
 
-	connFactory backbone.ConnectionFactory
+	connFactory       backbone.ConnectionFactory
+	messageReadWriter backbone.MessageReadWriter
+	messageFactory    backbone.MessageFactory
 
 	edgeLock sync.RWMutex
 	edge     map[string]string
 }
 
-func NewServer(connFactory backbone.ConnectionFactory) (*Server, error) {
+func NewServer(cfg Config) (*Server, error) {
 	server := &Server{
-		shutdown:    make(chan struct{}),
-		connFactory: connFactory,
+		shutdown: make(chan struct{}),
+		cfg:      cfg,
 	}
 	return server, nil
 }
 
-func (s *Server) Run(ctx context.Context) error {
+func (s *Server) Run(ctx context.Context) (err error) {
 	if !s.isRunning.CompareAndSwap(0, 1) {
 		log.Debug(ctx, "server already running")
 		return nil
@@ -40,10 +45,34 @@ func (s *Server) Run(ctx context.Context) error {
 	// todo retry listen with backoff
 
 	ctx, cancel := context.WithCancel(ctx)
-	listener, err := s.connFactory.Listen("")
+	defer func() {
+		if err != nil {
+			cancel()
+		}
+	}()
+
+	// todo
+	msgFactory := &backboneImpl.ProtobufMessageFactory{}
+	s.messageFactory = msgFactory
+	s.messageReadWriter = msgFactory
+
+	switch s.cfg.Backbone.ListenType {
+	case ListenTypeWebsocket:
+		s.connFactory, err = backboneImpl.NewWebsocketConnectionFactory(s.messageFactory)
+	case ListenTypeTcp:
+		err = errors.New("unimplemented yet")
+	}
 	if err != nil {
-		cancel()
-		return err
+		return
+	}
+	if s.connFactory == nil {
+		err = errors.New("unable to initialize connection")
+		return
+	}
+
+	listener, err := s.connFactory.Listen(s.cfg.Backbone.ListenAddr)
+	if err != nil {
+		return
 	}
 
 	s.wg.Add(3)
@@ -58,8 +87,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	go s.acceptController(ctx, listener)
 	go s.acceptWorker(ctx, listener)
-
-	return nil
+	return
 }
 
 func (s *Server) acceptController(ctx context.Context, listener backbone.ServerListener) {
@@ -71,7 +99,9 @@ func (s *Server) acceptController(ctx context.Context, listener backbone.ServerL
 	for {
 		ctrlConn, err := listener.AcceptController()
 		if err != nil {
-			log.Errorf(ctx, "error accepting controller. err: %v", err)
+			if !errors.Is(err, backbone.ErrClosed) {
+				log.Errorf(ctx, "error accepting controller. err: %v", err)
+			}
 			return
 		}
 		log.Debug(ctx, "got new controller", ctrlConn.RemoteAddr())
@@ -81,7 +111,7 @@ func (s *Server) acceptController(ctx context.Context, listener backbone.ServerL
 	}
 }
 
-func (s *Server) handleController(ctx context.Context, wg *sync.WaitGroup, conn backbone.ControllerConn) {
+func (s *Server) handleController(ctx context.Context, wg *sync.WaitGroup, conn backbone.Conn) {
 	defer wg.Done()
 	defer conn.Close()
 
@@ -98,8 +128,13 @@ func (s *Server) handleController(ctx context.Context, wg *sync.WaitGroup, conn 
 	)
 	defer localWg.Wait()
 
+	ctx = initConnID(ctx)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	defer func() {
+		// unregister all service related to this controller
+	}()
 
 	localWg.Add(1)
 	go func() {
@@ -130,7 +165,7 @@ func (s *Server) handleController(ctx context.Context, wg *sync.WaitGroup, conn 
 
 	defer cancel()
 	for {
-		message, err := conn.ReadMessage()
+		message, err := s.messageReadWriter.ReadMessage(conn)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				log.Debugf(ctx, "error network closed. %s", err)
@@ -151,7 +186,7 @@ func (s *Server) handleController(ctx context.Context, wg *sync.WaitGroup, conn 
 					lastPing = msg.Time
 				}
 				lastPingLock.Unlock()
-				err := conn.WriteMessage(&backbone.PongMessage{
+				err := s.messageReadWriter.WriteMessage(conn, &backbone.PongMessage{
 					Error: nil,
 					Time:  time.Now(),
 				})
@@ -178,8 +213,8 @@ func (s *Server) handleController(ctx context.Context, wg *sync.WaitGroup, conn 
 	}
 }
 
-func (s *Server) handleHandshake(conn backbone.ControllerConn) error {
-	message, err := conn.ReadMessage()
+func (s *Server) handleHandshake(conn backbone.Conn) error {
+	message, err := s.messageReadWriter.ReadMessage(conn)
 	if err != nil {
 		return err
 	}
@@ -191,7 +226,7 @@ func (s *Server) handleHandshake(conn backbone.ControllerConn) error {
 	// todo check auth & version
 	_ = handshakeMsg
 
-	return conn.WriteMessage(&backbone.HandshakeResMessage{
+	return s.messageReadWriter.WriteMessage(conn, &backbone.HandshakeResMessage{
 		Error:   nil,
 		Version: "1.2.3", // todo change
 	})
@@ -199,6 +234,26 @@ func (s *Server) handleHandshake(conn backbone.ControllerConn) error {
 
 func (s *Server) acceptWorker(ctx context.Context, listener backbone.ServerListener) {
 	defer s.wg.Done()
+
+	localWg := &sync.WaitGroup{}
+	defer localWg.Wait()
+
+	for {
+		workerConn, err := listener.AcceptWorker()
+		if err != nil {
+			if !errors.Is(err, backbone.ErrClosed) {
+				log.Errorf(ctx, "error accepting worker. err: %v", err)
+			}
+			return
+		}
+		log.Debug(ctx, "got new worker", workerConn.RemoteAddr())
+
+		localWg.Add(1)
+		go s.handleWorker(ctx, localWg, workerConn)
+	}
+}
+
+func (s *Server) handleWorker(ctx context.Context, wg *sync.WaitGroup, conn backbone.Conn) {
 
 }
 

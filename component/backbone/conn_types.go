@@ -7,28 +7,22 @@ import (
 )
 
 var (
-	ErrConnClosed = net.ErrClosed
+	ErrClosed = net.ErrClosed
 )
 
 type ConnectionFactory interface {
 	Listen(addr string) (ServerListener, error)
-	DialController(addr string) (ControllerConn, error)
-	DialWorker(addr string) (WorkerConn, error)
+	DialController(addr string) (Conn, error)
+	DialWorker(addr string) (Conn, error)
 }
 
 type ServerListener interface {
 	graceful.Service
 	net.Listener
-	AcceptController() (ControllerConn, error)
-	AcceptWorker() (WorkerConn, error)
+	AcceptController() (Conn, error)
+	AcceptWorker() (Conn, error)
 }
 
-type ControllerConn interface {
-	net.Conn
-	ReadMessage() (Message, error)
-	WriteMessage(msg Message) error
-}
-
-type WorkerConn interface {
+type Conn interface {
 	net.Conn
 }

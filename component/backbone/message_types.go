@@ -2,6 +2,7 @@ package backbone
 
 import (
 	"errors"
+	"io"
 	"time"
 )
 
@@ -23,6 +24,13 @@ const (
 	MessageTypeUnregisterEdge
 	MessageTypeUnregisterEdgeRes
 )
+
+type MessageReadWriter interface {
+	// ReadMessage should be concurrently safe
+	ReadMessage(reader io.Reader) (Message, error)
+	// WriteMessage should be concurrently safe
+	WriteMessage(writer io.Writer, msg Message) error
+}
 
 type MessageFactory interface {
 	NewMessage(msgType MessageType) (Message, error)

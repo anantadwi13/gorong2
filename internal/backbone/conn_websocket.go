@@ -3,7 +3,6 @@ package backbone
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/anantadwi13/gorong2/component/backbone"
 	"github.com/anantadwi13/gorong2/pkg/log"
-	"github.com/anantadwi13/gorong2/pkg/pool"
 	"github.com/gorilla/websocket"
 )
 
@@ -37,8 +35,8 @@ func (w *WebsocketConnectionFactory) Listen(addr string) (backbone.ServerListene
 	listener := &websocketServerListener{
 		addr:           addr,
 		messageFactory: w.messageFactory,
-		controllerConn: make(chan backbone.ControllerConn, 1024),
-		workerConn:     make(chan backbone.WorkerConn, 1024),
+		controllerConn: make(chan backbone.Conn, 1024),
+		workerConn:     make(chan backbone.Conn, 1024),
 	}
 	err := listener.looper()
 	if err != nil {
@@ -47,11 +45,11 @@ func (w *WebsocketConnectionFactory) Listen(addr string) (backbone.ServerListene
 	return listener, nil
 }
 
-func (w *WebsocketConnectionFactory) DialController(addr string) (backbone.ControllerConn, error) {
+func (w *WebsocketConnectionFactory) DialController(addr string) (backbone.Conn, error) {
 	return w.dial(addr, connTypeController)
 }
 
-func (w *WebsocketConnectionFactory) DialWorker(addr string) (backbone.WorkerConn, error) {
+func (w *WebsocketConnectionFactory) DialWorker(addr string) (backbone.Conn, error) {
 	return w.dial(addr, connTypeWorker)
 }
 
@@ -99,8 +97,8 @@ type websocketServerListener struct {
 
 	messageFactory backbone.MessageFactory
 
-	controllerConn chan backbone.ControllerConn
-	workerConn     chan backbone.WorkerConn
+	controllerConn chan backbone.Conn
+	workerConn     chan backbone.Conn
 	listener       net.Listener
 }
 
@@ -227,18 +225,18 @@ func (w *websocketServerListener) Addr() net.Addr {
 	return w.listener.Addr()
 }
 
-func (w *websocketServerListener) AcceptController() (backbone.ControllerConn, error) {
+func (w *websocketServerListener) AcceptController() (backbone.Conn, error) {
 	conn, ok := <-w.controllerConn
 	if !ok {
-		return nil, net.ErrClosed
+		return nil, backbone.ErrClosed
 	}
 	return conn, nil
 }
 
-func (w *websocketServerListener) AcceptWorker() (backbone.WorkerConn, error) {
+func (w *websocketServerListener) AcceptWorker() (backbone.Conn, error) {
 	conn, ok := <-w.workerConn
 	if !ok {
-		return nil, net.ErrClosed
+		return nil, backbone.ErrClosed
 	}
 	return conn, nil
 }
@@ -266,7 +264,7 @@ func (w *websocketConn) Read(b []byte) (read int, err error) {
 			if err != nil {
 				log.Trace(w.ctx, "error w.wsConn.NextReader", w.connType, err, read, n, reader)
 				if websocket.IsUnexpectedCloseError(err) {
-					err = errors.Join(net.ErrClosed, err)
+					err = errors.Join(backbone.ErrClosed, err)
 				}
 				return
 			}
@@ -312,67 +310,6 @@ func (w *websocketConn) Write(b []byte) (wrote int, err error) {
 		return
 	}
 	return
-}
-
-func (w *websocketConn) ReadMessage() (backbone.Message, error) {
-	bufMsgType := make([]byte, 1)
-	_, err := io.ReadFull(w, bufMsgType)
-	if err != nil {
-		return nil, err
-	}
-
-	var messageLen int64
-	err = binary.Read(w, binary.BigEndian, &messageLen)
-	if err != nil {
-		return nil, err
-	}
-
-	buf := pool.GetBuffer(int(messageLen))
-	defer pool.PutBuffer(buf)
-
-	buf.Buf = buf.Buf[:messageLen]
-	_, err = io.ReadFull(w, buf.Buf)
-	if err != nil {
-		return nil, err
-	}
-
-	msg, err := w.messageFactory.NewMessage(backbone.MessageType(bufMsgType[0]))
-	if err != nil {
-		return nil, err
-	}
-	err = w.messageFactory.UnmarshalMessage(buf.Buf, msg)
-	if err != nil {
-		return nil, err
-	}
-	return msg, nil
-}
-
-func (w *websocketConn) WriteMessage(msg backbone.Message) error {
-	if w.writerBuf == nil {
-		w.writerBuf = bufio.NewWriterSize(w, 4096) // todo change buffer size
-	}
-	w.writerBuf.Reset(w)
-
-	rawMsg, err := w.messageFactory.MarshalMessage(msg)
-	if err != nil {
-		return err
-	}
-	_, err = w.writerBuf.Write([]byte{byte(msg.MessageType())})
-	if err != nil {
-		return err
-	}
-
-	err = binary.Write(w.writerBuf, binary.BigEndian, int64(len(rawMsg)))
-	if err != nil {
-		return err
-	}
-
-	_, err = w.writerBuf.Write(rawMsg)
-	if err != nil {
-		return err
-	}
-
-	return w.writerBuf.Flush()
 }
 
 func (w *websocketConn) Close() error {
