@@ -1,0 +1,48 @@
+syntax = "proto3";
+package message;
+
+option go_package = "./internal/backbone";
+
+import "google/protobuf/timestamp.proto";
+
+message Handshake {
+  string version = 1;
+  bytes token = 2;
+}
+
+message HandshakeRes {
+  string error = 1;
+  string version = 2;
+}
+
+message Ping {
+  google.protobuf.Timestamp time = 1;
+}
+
+message Pong {
+  string error = 1;
+  google.protobuf.Timestamp time = 2;
+}
+
+message RegisterEdge {
+  string edge_name = 1;
+  string edge_type = 2;
+  string load_balancer_key = 3;
+  string edge_server_addr = 4;
+}
+
+message RegisterEdgeRes {
+  string error = 1;
+  string edge_runner_id = 2;
+  string edge_name = 3;
+}
+
+message UnregisterEdge {
+  string edge_runner_id = 1;
+}
+
+message UnregisterEdgeRes {
+  string error = 1;
+  string edge_runner_id = 2;
+  string edge_name = 3;
+}

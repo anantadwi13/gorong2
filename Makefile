@@ -13,3 +13,7 @@ docker-build-agent:
 .PHONY: docker-build-server
 docker-build-server:
 	docker build -t anantadwi13/gorong2-server -f server.dockerfile .
+
+.PHONY: proto
+proto:
+	protoc --go_out . $(shell find . -name "*.proto")
